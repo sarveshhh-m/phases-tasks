@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Crect width=%2716%27 height=%2716%27 fill=%27%230a0f0a%27/%3E%3Crect x=%274%27 y=%274%27 width=%278%27 height=%278%27 fill=%27%233dff7a%27/%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -33,6 +34,7 @@
       <div class="tb"><span>MENU</span><button id="mX" aria-label="Close">x</button></div>
       <label class="nm"><span>name</span><input id="projName" aria-label="Project name" placeholder="untitled"></label>
       <button id="bOpen">open file…</button>
+      <button id="mReload">reload from file</button>
       <button id="mExport">export project</button>
       <button id="mTemplate">export as template (reset progress)</button>
       <button id="bLayout">tidy up layout</button>
@@ -49,6 +51,7 @@
   <div class="chips" id="chips" role="group" aria-label="Filter by status"></div>
   <div class="meter" id="meter" title="This level: done / ready / blocked"></div>
   <span class="sp"></span>
+  <span class="sink" id="sink" hidden></span>
   <span class="keys" id="keys">click icon · status &nbsp; hover + 1/2/3 · set &nbsp; c · comment</span>
   <div class="zoom">
     <button id="zOut" aria-label="Zoom out">−</button><span class="zl" id="zLbl">100%</span><button id="zIn" aria-label="Zoom in">+</button>

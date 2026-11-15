@@ -185,3 +185,8 @@ dialog .row{display:flex;gap:8px;margin-top:18px}
 #pop .fx{font-size:11.5px;color:var(--block-ink);margin:-4px 0 10px;display:flex;flex-direction:column;gap:4px}
 #pop .lbl{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:5px}
 #pop .row button.primary{margin-left:auto}
+
+/* attached-file indicator in the status line */
+.sink{align-self:center;padding:0 12px;color:var(--phos);font-size:10.5px;white-space:nowrap;border-left:1px solid var(--bar-line);line-height:38px}
+.sink.err{color:var(--c-block)}
+@media (max-width:900px){.sink{display:none}}

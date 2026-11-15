@@ -47,7 +47,7 @@ function sample(){
 }
 let proj=load()||sample(), path=[], selEdge=null, filter='all', hoverId=null, view={x:40,y:40,k:1};
 function load(){try{const s=localStorage.getItem(KEY);return s?JSON.parse(s):null}catch(e){return null}}
-function save(){try{localStorage.setItem(KEY,JSON.stringify(proj))}catch(e){}}
+function save(noWrite){try{localStorage.setItem(KEY,JSON.stringify(proj))}catch(e){} if(!noWrite)flush()}
 
 /* ---------- graph helpers ---------- */
 const lvlOf=p=>{let g=proj.graph;for(const id of p){const n=g.nodes.find(n=>n.id===id);if(!n)break;g=n.graph}return g};
@@ -461,9 +461,9 @@ $('#bMenu').onclick=e=>{e.stopPropagation();closePop();mnu.hidden=!mnu.hidden};
 $('#mX').onclick=()=>menu.close();
 addEventListener('pointerdown',e=>{if(!mnu.hidden&&!mnu.contains(e.target)&&!$('#bMenu').contains(e.target))menu.close()},true);
 $('#bLayout').onclick=()=>{menu.close();autoLayout(level());fit();change()};
-const reset=p=>{proj=p;path=[];selEdge=null;filter='all';closePop();$('#projName').value=proj.name;menu.close();save();fit();render()};
-$('#mNew').onclick=()=>{if(confirm('Start a blank project? Current one will be replaced (export it first to keep it).'))reset({name:'',graph:{nodes:[],edges:[]}})};
-$('#mSample').onclick=()=>{if(confirm('Replace current project with the sample?'))reset(sample())};
+const reset=(p,noWrite)=>{proj=p;path=[];selEdge=null;filter='all';closePop();$('#projName').value=proj.name;menu.close();save(noWrite);fit();render()};
+$('#mNew').onclick=()=>{if(confirm(sink?'Start a blank project? This detaches '+sink.name+' (the file itself is not changed).':'Start a blank project? Current one will be replaced (export it first to keep it).')){detach();reset({name:'',graph:{nodes:[],edges:[]}})}};
+$('#mSample').onclick=()=>{if(confirm(sink?'Load the sample? This detaches '+sink.name+' (the file itself is not changed).':'Replace current project with the sample?')){detach();reset(sample())}};
 function download(name,obj){
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(obj,null,2)],{type:'application/json'}));
   a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
@@ -475,23 +475,30 @@ $('#mTemplate').onclick=()=>{
   (function r(g){g.nodes.forEach(n=>{n.status='todo';n.log=[];r(n.graph)})})(c.graph);
   download(slug(proj.name)+'-template.json',c);menu.close();
 };
-$('#bOpen').onclick=()=>{menu.close();$('#file').click()};
 
-/* Accepts either the app's own export, or the simple "phases" format (see PROMPT.md):
-   {name, phases:[{id,title,status,notes,dependsOn:[ids],tasks:[...same shape...]}]} */
+/* Accepts the simple "phases" format (see PROMPT.md) or the app's older own export:
+   {name, phases:[{id,title,status,notes,dependsOn:[ids],comments:[...],x,y,tasks:[...same shape...]}]} */
+const cleanId=s=>String(s).trim().replace(/[^\w.-]+/g,'-').replace(/^-+|-+$/g,'')||'item';
 function normalize(p){
   if(p&&p.graph&&Array.isArray(p.graph.nodes))return {p,warn:0};
   let warn=0;
   const top=p&&(p.phases||p.tasks||p.children||p.nodes);
   if(!Array.isArray(top))throw new Error('no phases');
   function build(items){
-    const g={nodes:[],edges:[]},byKey={};
+    const g={nodes:[],edges:[]},byKey={},used=new Set();
     items.forEach(it=>{
+      if(!it||typeof it!=='object'){warn++;return}
       const n=mkNode(String(it.title||it.name||it.id||'Untitled'),STAT.includes(it.status)?it.status:'todo',String(it.notes||it.description||''));
+      let id=cleanId(it.id!==undefined?it.id:n.title),base=id,k=2;
+      while(used.has(id))id=base+'-'+k++;
+      used.add(id);n.id=id;                                   /* keep the file's ids so write-back stays stable */
       const kids=it.tasks||it.children||it.phases||it.subtasks;
       if(Array.isArray(kids)&&kids.length)n.graph=build(kids);
+      if(Array.isArray(it.comments))n.log=it.comments.filter(c=>c&&(c.text||c.status)).map(c=>({at:Date.parse(c.at)||Date.now(),status:STAT.includes(c.status)?c.status:null,text:String(c.text||'')}));
+      if(Number.isFinite(it.x)&&Number.isFinite(it.y)){n.x=it.x;n.y=it.y}
       g.nodes.push(n);
       if(it.id!==undefined)byKey[String(it.id).toLowerCase()]=n;
+      byKey[id.toLowerCase()]=byKey[id.toLowerCase()]||n;
       byKey[n.title.toLowerCase()]=byKey[n.title.toLowerCase()]||n;
       n._src=it;
     });
@@ -508,16 +515,109 @@ function normalize(p){
   }
   return {p:{name:String(p.name||''),graph:build(top)},warn};
 }
-function importText(text){
-  try{const r=normalize(JSON.parse(text));reset(r.p);
-    toast(r.warn?`imported. ${r.warn} link(s) skipped (unknown id or loop)`:'imported')}
+
+/* ---------- file sync: every change is written back into the attached JSON ---------- */
+function itemsOf(g){
+  return g.nodes.map(n=>{
+    const o={id:n.id,title:n.title};
+    if(!hasKids(n))o.status=n.status;                         /* a phase's status is derived from its tasks */
+    if(n.notes)o.notes=n.notes;
+    const deps=g.edges.filter(e=>e.to===n.id).map(e=>e.from);
+    if(deps.length)o.dependsOn=deps;
+    const cm=(n.log||[]).map(e=>{const c={at:new Date(e.at).toISOString()};if(e.status)c.status=e.status;if(e.text)c.text=e.text;return c});
+    if(cm.length)o.comments=cm;
+    if(n.x!==undefined&&n.y!==undefined){o.x=Math.round(n.x);o.y=Math.round(n.y)}
+    if(hasKids(n))o.tasks=itemsOf(n.graph);
+    return o;
+  });
+}
+const toFile=p=>({name:p.name||'',phases:itemsOf(p.graph)});
+let sink=null,saveT=null,writing=false,lastText='',pollT=null;
+function showSink(state){
+  const el=$('#sink');
+  if(!sink){el.hidden=true;return}
+  el.hidden=false;el.textContent=`● ${sink.name} · ${state||'saved'}`;el.classList.toggle('err',state==='error');
+}
+function flush(){
+  if(!sink)return;
+  clearTimeout(saveT);showSink('saving…');
+  saveT=setTimeout(async()=>{
+    saveT=null;const s=sink;if(!s)return;
+    const text=JSON.stringify(toFile(proj),null,2)+'\n';
+    writing=true;lastText=text;
+    try{await s.write(text);if(sink===s)showSink()}
+    catch(e){showSink('error');toast('could not write '+s.name+': '+e.message)}
+    finally{writing=false}
+  },250);
+}
+function detach(){sink=null;clearTimeout(saveT);saveT=null;clearInterval(pollT);showSink()}
+async function openHandle(h){                                  /* Chrome / Edge: pick a file, keep write access */
+  try{
+    if(h.requestPermission&&await h.requestPermission({mode:'readwrite'})!=='granted')toast('no write permission: changes will not be saved to the file');
+    const r=normalize(JSON.parse(await (await h.getFile()).text()));
+    detach();
+    sink={name:h.name,read:async()=>(await h.getFile()).text(),
+      write:async t=>{const w=await h.createWritable();await w.write(t);await w.close()}};
+    reset(r.p,true);showSink();
+    toast(`editing ${h.name} — changes are saved to the file`+(r.warn?` (${r.warn} link(s) skipped)`:''));
+  }catch(e){if(e.name!=='AbortError')toast('could not open that file: '+e.message)}
+}
+async function probeServer(){                                  /* started with: serve.py --file …  (any browser) */
+  if(location.protocol==='file:')return;
+  try{
+    const r=await fetch('api/phases',{cache:'no-store'});
+    if(!r.ok)return;
+    const text=await r.text(),name=r.headers.get('X-File-Name')||'phases.json';
+    const res=normalize(JSON.parse(text));
+    sink={name,
+      read:async()=>{const g=await fetch('api/phases',{cache:'no-store'});if(!g.ok)throw new Error('HTTP '+g.status);return g.text()},
+      write:async t=>{const w=await fetch('api/phases',{method:'PUT',headers:{'Content-Type':'application/json'},body:t});if(!w.ok)throw new Error('HTTP '+w.status)}};
+    lastText=text;reset(res.p,true);showSink();
+    pollT=setInterval(pollFile,3000);
+  }catch(e){}
+}
+async function pollFile(){                                      /* pick up edits made to the file elsewhere (e.g. by an AI) */
+  if(!sink||saveT||writing||document.hidden)return;
+  try{
+    const t=await sink.read();
+    if(t===lastText||saveT||writing)return;
+    lastText=t;applyExternal(normalize(JSON.parse(t)).p);toast(sink.name+' changed on disk — reloaded');
+  }catch(e){}
+}
+function applyExternal(p){
+  proj=p;let g=proj.graph;const ok=[];
+  for(const id of path){const n=g.nodes.find(x=>x.id===id);if(!n)break;ok.push(id);g=n.graph}
+  path=ok;save(true);closePop();$('#projName').value=proj.name;render();
+}
+$('#mReload').onclick=async()=>{
+  menu.close();
+  if(!sink)return toast('no file attached — open one first');
+  try{const t=await sink.read();lastText=t;applyExternal(normalize(JSON.parse(t)).p);toast('reloaded '+sink.name)}
+  catch(e){toast('could not reload: '+e.message)}
+};
+function importText(text){                                     /* browsers without file write access: read-only copy */
+  try{const r=normalize(JSON.parse(text));detach();reset(r.p);
+    toast((r.warn?`imported (${r.warn} link(s) skipped). `:'imported. ')+'This browser can’t save back to the file: use Chrome/Edge, or start with start-phases-graph.command <file>.')}
   catch(_){toast('could not read that file — expected JSON with a "phases" list')}
 }
+$('#bOpen').onclick=async()=>{
+  menu.close();
+  if(window.showOpenFilePicker){
+    try{const [h]=await showOpenFilePicker({types:[{description:'Phases JSON',accept:{'application/json':['.json']}}]});await openHandle(h)}
+    catch(e){if(e.name!=='AbortError')toast('could not open: '+e.message)}
+  }else $('#file').click();
+};
 $('#file').onchange=async e=>{const f=e.target.files[0];if(f)importText(await f.text());e.target.value=''};
 addEventListener('dragover',e=>e.preventDefault());
-addEventListener('drop',async e=>{e.preventDefault();const f=e.dataTransfer.files[0];if(f)importText(await f.text())});
+addEventListener('drop',async e=>{
+  e.preventDefault();
+  const it=e.dataTransfer.items&&e.dataTransfer.items[0];
+  if(it&&it.getAsFileSystemHandle){const h=await it.getAsFileSystemHandle();if(h&&h.kind==='file'){await openHandle(h);return}}
+  const f=e.dataTransfer.files[0];if(f)importText(await f.text());
+});
 
 let tt;function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('show'),2800)}
 addEventListener('resize',()=>{closePop();render()});
 $('#projName').value=proj.name;
 fit();render();
+probeServer();
