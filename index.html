@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Phases &amp; tasks</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <div id="stage">
+    <svg id="cv" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="a-todo" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 1L10 5L0 9z" fill="#3d5a46"/></marker>
+        <marker id="a-sat" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 1L10 5L0 9z" fill="#0a7a2f"/></marker>
+        <marker id="a-bad" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 1L10 5L0 9z" fill="#b3261e"/></marker>
+      </defs>
+      <g id="world"><g id="edges"></g><path id="tmp" class="tmp" d=""/><g id="nodes"></g></g>
+    </svg>
+
+    <div class="empty" id="empty"><div><span class="pr">$</span> no items yet<span class="caret"></span><br><span class="dim">double-click the canvas, or press + ADD</span></div></div>
+
+    <!-- top-left: menu button; the path only appears inside a phase -->
+    <div class="tl">
+      <button id="bMenu" class="tbtn" aria-label="Menu" title="Menu"></button>
+      <nav class="trail" id="crumbs" hidden aria-label="Where you are"></nav>
+    </div>
+    <div id="mnu" hidden>
+      <div class="tb"><span>MENU</span><button id="mX" aria-label="Close">x</button></div>
+      <label class="nm"><span>name</span><input id="projName" aria-label="Project name" placeholder="untitled"></label>
+      <button id="bOpen">open file…</button>
+      <button id="mExport">export project</button>
+      <button id="mTemplate">export as template (reset progress)</button>
+      <button id="bLayout">tidy up layout</button>
+      <hr>
+      <button id="mNew">new blank project</button>
+      <button id="mSample">load sample project</button>
+    </div>
+  </div>
+</main>
+
+<!-- bottom: terminal status line -->
+<footer id="bar">
+  <button id="bAdd" class="add" title="Add item (or double-click the canvas)"></button>
+  <div class="chips" id="chips" role="group" aria-label="Filter by status"></div>
+  <div class="meter" id="meter" title="This level: done / ready / blocked"></div>
+  <span class="sp"></span>
+  <span class="keys" id="keys">click icon · status &nbsp; hover + 1/2/3 · set &nbsp; c · comment</span>
+  <div class="zoom">
+    <button id="zOut" aria-label="Zoom out">−</button><span class="zl" id="zLbl">100%</span><button id="zIn" aria-label="Zoom in">+</button>
+    <button id="bFit" aria-label="Fit to screen" title="Fit to screen"></button>
+  </div>
+</footer>
+
+<div id="pop" hidden role="dialog" aria-label="Status and comments"></div>
+
+<dialog id="dlg"><form method="dialog" id="dform">
+  <div class="tb"><span id="dTitle">EDIT</span></div>
+  <div class="bd">
+    <label for="fTitle">title</label><input id="fTitle" required maxlength="80">
+    <label for="fNotes">notes</label><textarea id="fNotes"></textarea>
+    <div class="row"><button type="button" id="dDel" class="danger">delete</button><span class="sp"></span><button type="button" id="dCancel">cancel</button><button class="primary" id="dSave" value="ok">save</button></div>
+  </div>
+</form></dialog>
+
+<input type="file" id="file" accept=".json,application/json" hidden>
+<div id="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>
