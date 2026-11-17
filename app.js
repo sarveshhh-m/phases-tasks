@@ -534,9 +534,14 @@ function itemsOf(g){
 const toFile=p=>({name:p.name||'',phases:itemsOf(p.graph)});
 let sink=null,saveT=null,writing=false,lastText='',pollT=null;
 function showSink(state){
-  const el=$('#sink');
-  if(!sink){el.hidden=true;return}
-  el.hidden=false;el.textContent=`● ${sink.name} · ${state||'saved'}`;el.classList.toggle('err',state==='error');
+  const el=$('#sink');el.hidden=false;
+  if(!sink){
+    el.textContent='○ no file attached';el.classList.add('off');el.classList.remove('err');
+    el.title='Changes stay in this browser only. Start with: start-phases-graph.command <file.json>  (or use “open file…” in Chrome/Edge)';
+    return;
+  }
+  el.classList.remove('off');el.title=sink.name;
+  el.textContent=`● ${sink.name} · ${state||'saved'}`;el.classList.toggle('err',state==='error');
 }
 function flush(){
   if(!sink)return;
@@ -554,11 +559,12 @@ function detach(){sink=null;clearTimeout(saveT);saveT=null;clearInterval(pollT);
 async function openHandle(h){                                  /* Chrome / Edge: pick a file, keep write access */
   try{
     if(h.requestPermission&&await h.requestPermission({mode:'readwrite'})!=='granted')toast('no write permission: changes will not be saved to the file');
-    const r=normalize(JSON.parse(await (await h.getFile()).text()));
+    const txt=await (await h.getFile()).text();
+    const r=normalize(JSON.parse(txt));
     detach();
     sink={name:h.name,read:async()=>(await h.getFile()).text(),
       write:async t=>{const w=await h.createWritable();await w.write(t);await w.close()}};
-    reset(r.p,true);showSink();
+    lastText=txt;reset(r.p,true);showSink();startPolling();
     toast(`editing ${h.name} — changes are saved to the file`+(r.warn?` (${r.warn} link(s) skipped)`:''));
   }catch(e){if(e.name!=='AbortError')toast('could not open that file: '+e.message)}
 }
@@ -573,17 +579,22 @@ async function probeServer(){                                  /* started with: 
       read:async()=>{const g=await fetch('api/phases',{cache:'no-store'});if(!g.ok)throw new Error('HTTP '+g.status);return g.text()},
       write:async t=>{const w=await fetch('api/phases',{method:'PUT',headers:{'Content-Type':'application/json'},body:t});if(!w.ok)throw new Error('HTTP '+w.status)}};
     lastText=text;reset(res.p,true);showSink();
-    pollT=setInterval(pollFile,3000);
+    startPolling();
   }catch(e){}
 }
+function startPolling(){clearInterval(pollT);pollT=setInterval(pollFile,1000)}
 async function pollFile(){                                      /* pick up edits made to the file elsewhere (e.g. by an AI) */
-  if(!sink||saveT||writing||document.hidden)return;
+  if(!sink||saveT||writing)return;
+  if(!pop.hidden||$('#dlg').open)return;                       /* don't yank the UI while you're typing; retried next tick */
   try{
     const t=await sink.read();
     if(t===lastText||saveT||writing)return;
-    lastText=t;applyExternal(normalize(JSON.parse(t)).p);toast(sink.name+' changed on disk — reloaded');
+    const p=normalize(JSON.parse(t)).p;                         /* half-written / invalid file: skipped, retried */
+    lastText=t;applyExternal(p);toast(sink.name+' changed on disk — reloaded');
   }catch(e){}
 }
+addEventListener('focus',()=>pollFile());
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)pollFile()});
 function applyExternal(p){
   proj=p;let g=proj.graph;const ok=[];
   for(const id of path){const n=g.nodes.find(x=>x.id===id);if(!n)break;ok.push(id);g=n.graph}
@@ -619,5 +630,5 @@ addEventListener('drop',async e=>{
 let tt;function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('show'),2800)}
 addEventListener('resize',()=>{closePop();render()});
 $('#projName').value=proj.name;
-fit();render();
+fit();render();showSink();
 probeServer();

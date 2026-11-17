@@ -189,4 +189,5 @@ dialog .row{display:flex;gap:8px;margin-top:18px}
 /* attached-file indicator in the status line */
 .sink{align-self:center;padding:0 12px;color:var(--phos);font-size:10.5px;white-space:nowrap;border-left:1px solid var(--bar-line);line-height:38px}
 .sink.err{color:var(--c-block)}
+.sink.off{color:var(--bar-muted)}
 @media (max-width:900px){.sink{display:none}}
