@@ -532,12 +532,12 @@ function itemsOf(g){
   });
 }
 const toFile=p=>({name:p.name||'',phases:itemsOf(p.graph)});
-let sink=null,saveT=null,writing=false,lastText='',pollT=null;
+let sink=null,saveT=null,writing=false,lastText='',pollT=null,serverApi=null;   /* serverApi: set when serve.py is behind the page */
 function showSink(state){
   const el=$('#sink');el.hidden=false;
   if(!sink){
     el.textContent='○ no file attached';el.classList.add('off');el.classList.remove('err');
-    el.title='Changes stay in this browser only. Start with: start-phases-graph.command <file.json>  (or use “open file…” in Chrome/Edge)';
+    el.title='Changes stay in this browser only. Use menu → open file… to attach a JSON file that saves your changes.';
     return;
   }
   el.classList.remove('off');el.title=sink.name;
@@ -555,7 +555,10 @@ function flush(){
     finally{writing=false}
   },250);
 }
-function detach(){sink=null;clearTimeout(saveT);saveT=null;clearInterval(pollT);showSink()}
+function detach(){
+  if(sink&&sink.server)fetch('api/attach',{method:'DELETE'}).catch(()=>{});
+  sink=null;clearTimeout(saveT);saveT=null;clearInterval(pollT);showSink();
+}
 async function openHandle(h,fallbackFile){                                  /* Chrome / Edge: pick a file, keep write access */
   try{
     if(h.requestPermission&&await h.requestPermission({mode:'readwrite'})!=='granted')toast('no write permission: changes will not be saved to the file');
@@ -572,25 +575,50 @@ async function openHandle(h,fallbackFile){                                  /* C
        Fall back to a read-only copy instead of failing. */
     if(['NotAllowedError','SecurityError','NotFoundError'].includes(e.name)||/not allowed|permission|denied/i.test(e.message||'')){
       if(fallbackFile){importText(await fallbackFile.text());return}
+      if(serverApi&&serverApi.pick){await pickViaServer();return}
       toast('this browser blocked access to that file — pick it again to open a read-only copy');
       $('#file').click();return;
     }
     toast('could not open that file: '+e.message);
   }
 }
-async function probeServer(){                                  /* started with: serve.py --file …  (any browser) */
+async function probeServer(){                                  /* is serve.py behind this page? (any browser, incl. Safari) */
   if(location.protocol==='file:')return;
   try{
-    const r=await fetch('api/phases',{cache:'no-store'});
+    const r=await fetch('api/info',{cache:'no-store'});
     if(!r.ok)return;
-    const text=await r.text(),name=r.headers.get('X-File-Name')||'phases.json';
-    const res=normalize(JSON.parse(text));
-    sink={name,
-      read:async()=>{const g=await fetch('api/phases',{cache:'no-store'});if(!g.ok)throw new Error('HTTP '+g.status);return g.text()},
-      write:async t=>{const w=await fetch('api/phases',{method:'PUT',headers:{'Content-Type':'application/json'},body:t});if(!w.ok)throw new Error('HTTP '+w.status)}};
-    lastText=text;reset(res.p,true);showSink();
-    startPolling();
+    serverApi=await r.json();$('#mPath').hidden=false;
+    if(serverApi.attached)await attachServer();
   }catch(e){}
+}
+async function attachServer(){                                  /* read + start syncing the file the server has attached */
+  const r=await fetch('api/phases',{cache:'no-store'});
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  const text=await r.text(),name=r.headers.get('X-File-Name')||'phases.json';
+  const res=normalize(JSON.parse(text));
+  sink={name,server:true,
+    read:async()=>{const g=await fetch('api/phases',{cache:'no-store'});if(!g.ok)throw new Error('HTTP '+g.status);return g.text()},
+    write:async t=>{const w=await fetch('api/phases',{method:'PUT',headers:{'Content-Type':'application/json'},body:t});if(!w.ok)throw new Error('HTTP '+w.status)}};
+  lastText=text;reset(res.p,true);showSink();startPolling();
+  toast(`editing ${name} — changes are saved to the file`+(res.warn?` (${res.warn} link(s) skipped)`:''));
+}
+async function pickViaServer(){                                 /* macOS native chooser, opened by the local server */
+  try{
+    toast('choose the JSON file in the window that just opened…');
+    const r=await fetch('api/pick',{method:'POST'});
+    if(r.status===204)return;                                   /* cancelled */
+    if(!r.ok){const e=await r.json().catch(()=>({}));toast(e.error||'could not open the file chooser');return}
+    await attachServer();
+  }catch(e){toast('could not attach: '+e.message)}
+}
+async function attachByPath(){
+  const v=prompt('Path to the JSON file (inside your home folder), e.g. ~/projects/app/phases.json');
+  if(!v)return;
+  try{
+    const r=await fetch('api/attach',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:v})});
+    if(!r.ok){const e=await r.json().catch(()=>({}));toast(e.error||'could not attach that file');return}
+    await attachServer();
+  }catch(e){toast('could not attach: '+e.message)}
 }
 function startPolling(){clearInterval(pollT);pollT=setInterval(pollFile,1000)}
 async function pollFile(){                                      /* pick up edits made to the file elsewhere (e.g. by an AI) */
@@ -618,7 +646,7 @@ $('#mReload').onclick=async()=>{
 };
 function importText(text){                                     /* browsers without file write access: read-only copy */
   try{const r=normalize(JSON.parse(text));detach();reset(r.p);
-    toast((r.warn?`imported (${r.warn} link(s) skipped). `:'imported. ')+'Read-only copy: this browser can’t write to the file. Start the app with start-phases-graph.command <file.json> to save changes into it.')}
+    toast((r.warn?`imported (${r.warn} link(s) skipped). `:'imported. ')+(serverApi?'Read-only copy. To save changes into the file use menu → open file… (or attach by path).':'Read-only copy: this browser can’t write to the file. Start the app with start-phases-graph.command <file.json> to save changes into it.'))}
   catch(_){toast('could not read that file — expected JSON with a "phases" list')}
 }
 $('#bOpen').onclick=async()=>{
@@ -630,8 +658,10 @@ $('#bOpen').onclick=async()=>{
       if(['NotAllowedError','SecurityError'].includes(e.name)||/not allowed|permission|denied/i.test(e.message||'')){$('#file').click();return}
       toast('could not open: '+e.message);
     }
-  }else $('#file').click();
+  }else if(serverApi&&serverApi.pick)await pickViaServer();      /* Safari / Firefox: no picker API, so the server opens the chooser */
+  else $('#file').click();
 };
+$('#mPath').onclick=()=>{menu.close();attachByPath()};
 $('#file').onchange=async e=>{const f=e.target.files[0];if(f)importText(await f.text());e.target.value=''};
 addEventListener('dragover',e=>e.preventDefault());
 addEventListener('drop',async e=>{

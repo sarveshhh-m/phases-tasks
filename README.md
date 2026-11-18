@@ -15,9 +15,10 @@ Open `index.html` in a browser (or `python3 -m http.server` in this folder). You
 
 Edits (status, comments, card positions) can be written straight back into your `phases.json`:
 
-- **Any browser:** `start-phases-graph.command path/to/phases.json` (or `python3 serve.py --file path/to/phases.json`). The app opens that file; every change is saved into it, and edits made to the file elsewhere (for example by an AI) appear in the open page within a few seconds.
-- **Chrome / Edge:** use **open file…** (or drag the file onto the page) and allow write access; changes are saved to that file.
-- Without either, changes stay in the browser's storage only. Safari and Firefox can't write to a picked file, so use the first option there.
+- **Any browser (including Safari and Firefox):** start the server (`start-phases-graph.command`, or `python3 serve.py`), then use **menu → open file…**. On macOS the server opens the native file chooser; pick your `phases.json` and every change is saved into it. **menu → attach by path…** does the same by typing a path. You can also start it attached: `start-phases-graph.command path/to/phases.json`. Files must be `.json` files inside your home folder.
+- **Chrome / Edge:** **open file…** (or drag the file onto the page) uses the browser's own file picker and asks for write access.
+- Edits made to the file elsewhere (for example by an AI) appear in the open page within a second or two.
+- Without any of these, changes stay in the browser's storage only. (Safari has no file-picker API, which is why the server does it.)
 
 The status line shows `● phases.json · saved` while a file is attached.
 
