@@ -556,7 +556,7 @@ function flush(){
   },250);
 }
 function detach(){sink=null;clearTimeout(saveT);saveT=null;clearInterval(pollT);showSink()}
-async function openHandle(h){                                  /* Chrome / Edge: pick a file, keep write access */
+async function openHandle(h,fallbackFile){                                  /* Chrome / Edge: pick a file, keep write access */
   try{
     if(h.requestPermission&&await h.requestPermission({mode:'readwrite'})!=='granted')toast('no write permission: changes will not be saved to the file');
     const txt=await (await h.getFile()).text();
@@ -566,7 +566,17 @@ async function openHandle(h){                                  /* Chrome / Edge:
       write:async t=>{const w=await h.createWritable();await w.write(t);await w.close()}};
     lastText=txt;reset(r.p,true);showSink();startPolling();
     toast(`editing ${h.name} — changes are saved to the file`+(r.warn?` (${r.warn} link(s) skipped)`:''));
-  }catch(e){if(e.name!=='AbortError')toast('could not open that file: '+e.message)}
+  }catch(e){
+    if(e.name==='AbortError')return;
+    /* Some browsers (embedded ones, Safari, locked-down profiles) expose the picker but block reading/writing the handle.
+       Fall back to a read-only copy instead of failing. */
+    if(['NotAllowedError','SecurityError','NotFoundError'].includes(e.name)||/not allowed|permission|denied/i.test(e.message||'')){
+      if(fallbackFile){importText(await fallbackFile.text());return}
+      toast('this browser blocked access to that file — pick it again to open a read-only copy');
+      $('#file').click();return;
+    }
+    toast('could not open that file: '+e.message);
+  }
 }
 async function probeServer(){                                  /* started with: serve.py --file …  (any browser) */
   if(location.protocol==='file:')return;
@@ -608,23 +618,30 @@ $('#mReload').onclick=async()=>{
 };
 function importText(text){                                     /* browsers without file write access: read-only copy */
   try{const r=normalize(JSON.parse(text));detach();reset(r.p);
-    toast((r.warn?`imported (${r.warn} link(s) skipped). `:'imported. ')+'This browser can’t save back to the file: use Chrome/Edge, or start with start-phases-graph.command <file>.')}
+    toast((r.warn?`imported (${r.warn} link(s) skipped). `:'imported. ')+'Read-only copy: this browser can’t write to the file. Start the app with start-phases-graph.command <file.json> to save changes into it.')}
   catch(_){toast('could not read that file — expected JSON with a "phases" list')}
 }
 $('#bOpen').onclick=async()=>{
   menu.close();
   if(window.showOpenFilePicker){
     try{const [h]=await showOpenFilePicker({types:[{description:'Phases JSON',accept:{'application/json':['.json']}}]});await openHandle(h)}
-    catch(e){if(e.name!=='AbortError')toast('could not open: '+e.message)}
+    catch(e){
+      if(e.name==='AbortError')return;
+      if(['NotAllowedError','SecurityError'].includes(e.name)||/not allowed|permission|denied/i.test(e.message||'')){$('#file').click();return}
+      toast('could not open: '+e.message);
+    }
   }else $('#file').click();
 };
 $('#file').onchange=async e=>{const f=e.target.files[0];if(f)importText(await f.text());e.target.value=''};
 addEventListener('dragover',e=>e.preventDefault());
 addEventListener('drop',async e=>{
   e.preventDefault();
+  const f=e.dataTransfer.files[0];
   const it=e.dataTransfer.items&&e.dataTransfer.items[0];
-  if(it&&it.getAsFileSystemHandle){const h=await it.getAsFileSystemHandle();if(h&&h.kind==='file'){await openHandle(h);return}}
-  const f=e.dataTransfer.files[0];if(f)importText(await f.text());
+  if(it&&it.getAsFileSystemHandle){
+    try{const h=await it.getAsFileSystemHandle();if(h&&h.kind==='file'){await openHandle(h,f);return}}catch(_){}
+  }
+  if(f)importText(await f.text());
 });
 
 let tt;function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('show'),2800)}
